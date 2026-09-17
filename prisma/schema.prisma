@@ -1,0 +1,95 @@
+// AfterClip data model
+// Auth is intentionally omitted for the MVP scaffold (single-user, no login).
+// Backed by Netlify DB (Postgres) — see src/lib/prisma.ts for how the
+// connection string is resolved at runtime.
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// A ClipProject groups every version of the "same" clip together,
+// so we can show score progression across revisions.
+model ClipProject {
+  id        String         @id @default(cuid())
+  title     String
+  createdAt DateTime       @default(now())
+  versions  ReviewVersion[]
+}
+
+model ReviewVersion {
+  id            String   @id @default(cuid())
+  project       ClipProject @relation(fields: [projectId], references: [id])
+  projectId     String
+  versionNumber Int
+
+  clipUrl       String
+  clipTitle     String
+  clipGoal      String
+  referenceUrl  String?
+  platform      String // "youtube" | "youtube_shorts" | "tiktok"
+
+  status        String   @default("pending") // pending | processing | complete | failed
+  errorMessage  String?
+
+  overallScore     Int?
+  viralPotential   Int?
+  verdict          String? // ready | almost | not_ready
+  verdictReason    String?
+
+  strengths            String? // JSON string array
+  problems             String? // JSON string array (ordered by impact)
+  improvementPriorities String? // JSON: { high: [], medium: [], low: [] }
+  referenceComparison   String? // JSON, null if no reference
+
+  categoryScores TimestampCategoryScore?
+  timestampFeedback TimestampFeedback[]
+  messages          AIMessage[]
+
+  createdAt     DateTime @default(now())
+
+  @@unique([projectId, versionNumber])
+}
+
+// One-to-one category score breakdown per review version.
+model TimestampCategoryScore {
+  id             String        @id @default(cuid())
+  version        ReviewVersion @relation(fields: [versionId], references: [id])
+  versionId      String        @unique
+
+  hook           Int
+  retention      Int
+  editing        Int
+  subtitles      Int
+  audio          Int
+  storytelling   Int
+  entertainment  Int
+  shareability   Int
+  goalAlignment  Int
+}
+
+model TimestampFeedback {
+  id         String        @id @default(cuid())
+  version    ReviewVersion @relation(fields: [versionId], references: [id])
+  versionId  String
+
+  startTime  String // "00:00"
+  endTime    String // "00:02"
+  tag        String // "strong" | "warning" | "good" | "issue"
+  note       String
+  order      Int
+}
+
+model AIMessage {
+  id         String        @id @default(cuid())
+  version    ReviewVersion @relation(fields: [versionId], references: [id])
+  versionId  String
+
+  role       String // "user" | "assistant"
+  content    String
+  createdAt  DateTime @default(now())
+}
