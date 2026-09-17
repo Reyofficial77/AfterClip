@@ -95,10 +95,17 @@ export default async function ReviewPage({
     );
   }
 
-  const messages = await prisma.aIMessage.findMany({
+  const rawMessages = await prisma.aIMessage.findMany({
     where: { versionId: version.id },
     orderBy: { createdAt: "asc" },
   });
+  // Prisma types `role` as a plain string (the schema stores it as String,
+  // not an enum); narrow it here to the union ChatPanel expects.
+  const messages = rawMessages.map((m: (typeof rawMessages)[number]) => ({
+    id: m.id,
+    role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
+    content: m.content,
+  }));
 
   return (
     <main className="max-w-5xl mx-auto px-6 py-12">
