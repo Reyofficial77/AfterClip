@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { checkClipUrl } from "@/lib/url";
 import { createReviewSchema } from "@/lib/validators";
-import { runMockAnalysis } from "@/lib/gemini";
+import { analyzeClip, CantAccessVideoError, MalformedAIResponseError } from "@/lib/gemini";
 
 export async function GET() {
   const projects = await prisma.clipProject.findMany({
@@ -89,11 +89,14 @@ export async function POST(req: NextRequest) {
   });
 
   try {
-    const result = await runMockAnalysis({
+    const referenceCheck = referenceUrl ? checkClipUrl(referenceUrl) : null;
+    const result = await analyzeClip({
       clipUrl,
       clipTitle,
       clipGoal,
+      platform: urlCheck.platform,
       referenceUrl,
+      referencePlatform: referenceCheck?.ok ? referenceCheck.platform : null,
     });
 
     await prisma.reviewVersion.update({
@@ -123,13 +126,16 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (err) {
+    const errorMessage =
+      err instanceof CantAccessVideoError
+        ? err.message
+        : err instanceof MalformedAIResponseError
+        ? "AI ngasih hasil yang nggak valid, jadi AfterClip nggak nampilin review yang belum diverifikasi. Coba lagi ya."
+        : "Gue nggak bisa review clip ini dengan jujur karena ada masalah pas analisis. Coba lagi ya.";
+
     await prisma.reviewVersion.update({
       where: { id: version.id },
-      data: {
-        status: "failed",
-        errorMessage:
-          "Gue nggak bisa review clip ini dengan jujur karena ada masalah pas analisis. Coba lagi ya.",
-      },
+      data: { status: "failed", errorMessage },
     });
   }
 

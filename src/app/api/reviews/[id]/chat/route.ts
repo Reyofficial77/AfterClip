@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { chatMessageSchema } from "@/lib/validators";
-import { mockChatReply } from "@/lib/gemini";
+import { chatWithGemini } from "@/lib/gemini";
 import { serializeVersion } from "@/lib/serialize";
 
 // Note: `id` here is a ReviewVersion id (chat is scoped to one specific
@@ -38,12 +38,19 @@ export async function POST(
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
+  const priorMessages = await prisma.aIMessage.findMany({
+    where: { versionId: version.id },
+    orderBy: { createdAt: "asc" },
+  });
+
   await prisma.aIMessage.create({
     data: { versionId: version.id, role: "user", content: parsed.data.message },
   });
 
   const serialized = serializeVersion(version);
-  const reply = mockChatReply(parsed.data.message, {
+  const reply = await chatWithGemini(
+    parsed.data.message,
+    {
     overallScore: serialized.overallScore ?? 0,
     viralPotential: serialized.viralPotential ?? 0,
     verdict: serialized.verdict ?? "almost",
@@ -59,12 +66,17 @@ export async function POST(
       shareability: 0,
       goalAlignment: 0,
     },
-    strengths: serialized.strengths,
-    problems: serialized.problems,
-    improvementPriorities: serialized.improvementPriorities,
-    timestampFeedback: serialized.timestampFeedback,
-    referenceComparison: serialized.referenceComparison,
-  });
+      strengths: serialized.strengths,
+      problems: serialized.problems,
+      improvementPriorities: serialized.improvementPriorities,
+      timestampFeedback: serialized.timestampFeedback,
+      referenceComparison: serialized.referenceComparison,
+    },
+    priorMessages.map((m: (typeof priorMessages)[number]) => ({
+      role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
+      content: m.content,
+    }))
+  );
 
   const assistantMessage = await prisma.aIMessage.create({
     data: { versionId: version.id, role: "assistant", content: reply },

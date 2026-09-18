@@ -6,9 +6,10 @@ Companion product to [ClipForge](https://clipforgeid.netlify.app). ClipForge hel
 creators make clips; AfterClip tells them, honestly, whether the finished clip
 is actually good — and exactly what to fix.
 
-This is an MVP scaffold: the full app structure, database, UI, and API are
-real and working end-to-end, but the AI video analysis is **stubbed** (see
-below) instead of calling a real multimodal model yet.
+The full app — database, UI, and API — is real and working end-to-end.
+AI analysis is also real (Gemini) for YouTube/YouTube Shorts clips; see
+"AI: what's real, what's mocked" below for exactly what that covers and
+where it still falls back to a mock.
 
 ## Stack
 
@@ -32,8 +33,8 @@ This repo is ready to deploy as-is:
    `scripts/netlify-db-push.mjs` first, which pushes `prisma/schema.prisma`
    to that deploy's database branch, then runs `next build`.
 4. Set `GEMINI_API_KEY` / `GEMINI_MODEL` in the Netlify site's environment
-   variables once you wire up the real AI pipeline (see below) — not
-   required for the current stubbed version.
+   variables to turn on real analysis (see "AI: what's real, what's mocked"
+   below) — without it, AfterClip runs on the deterministic mock instead.
 
 ## Local development
 
@@ -56,37 +57,36 @@ npm run dev
 
 Open http://localhost:3000 either way.
 
-## What's real vs. stubbed
+## AI: what's real, what's mocked
 
-**Real and working:**
-- Landing page, dashboard, submit form, review results, revision flow, AI
-  chat panel, version progress — all wired to a real Postgres database via
-  Prisma and real API routes.
-- URL validation for YouTube / YouTube Shorts / TikTok (`src/lib/url.ts`).
-- The full structured review schema from the PRD (`src/types/review.ts`),
-  persisted and re-hydrated correctly.
+**Real Gemini analysis** (`src/lib/gemini.ts`, `analyzeClipWithGemini` /
+`chatWithGemini`) runs whenever `GEMINI_API_KEY` is set:
+- Uses Gemini's native YouTube-URL support (`fileData: { fileUri: <youtube url> }`)
+  — no video download/upload step needed for **YouTube / YouTube Shorts**.
+  Reference-clip comparison also attaches the reference video the same way
+  when it's a YouTube URL.
+- The model is instructed (system prompt) to return **strict JSON only**,
+  matching `AIReviewResult` exactly; every response is validated with a zod
+  schema (`aiReviewResultSchema`) before it ever reaches the database or UI —
+  a malformed response is treated as a failure, never patched or guessed at.
+- Chat (`chatWithGemini`) is a text-only call grounded in that version's
+  *stored* review JSON plus the real conversation history — it answers from
+  the data, not a fresh re-analysis.
 
-**Stubbed — needs the real AI pipeline:**
-- `src/lib/gemini.ts` — `runMockAnalysis()` returns deterministic mock scores
-  and feedback shaped exactly like the real thing would, so every screen has
-  real data to render. `mockChatReply()` answers chat questions from the
-  *stored* review data (not random), matching the PRD's "don't regenerate
-  random opinions" rule — but it's template-based, not a real model call.
+**TikTok is honestly unsupported for real analysis right now.** Gemini's
+direct-URL video support only covers YouTube — there's no equivalent for
+TikTok without a video-retrieval pipeline (download the clip, then upload it
+via the Files API), which isn't built here. Submitting a TikTok URL with
+`GEMINI_API_KEY` set returns a `failed` version with an honest
+"can't access this video" message (`CantAccessVideoError`) — it does **not**
+silently fall back to a fake review, per the PRD's "never pretend to have
+watched a video" rule. To add TikTok support, build a retrieval step that
+downloads the clip and uploads it via the Gemini Files API instead of
+`fileData: { fileUri }`.
 
-### Wiring up the real Gemini analysis
-
-1. `npm install @google/genai`
-2. Set `GEMINI_API_KEY` and `GEMINI_MODEL` in `.env`.
-3. In `src/lib/gemini.ts`, replace the body of `runMockAnalysis` with a
-   multimodal request (video/audio in, strict JSON out) and validate the
-   response with a zod schema before trusting it — **never let a malformed
-   AI response reach the UI**. Keep the return type `AIReviewResult` so
-   nothing downstream (API routes, pages, components) needs to change.
-4. You'll also need an actual video retrieval step (download / extract
-   frames+audio from the YouTube/TikTok URL) before you can send anything to
-   the model — that's not implemented here. Respect the PRD's "never pretend
-   to have watched a video" rule: if retrieval fails, surface that honestly
-   instead of falling back to the mock.
+**No `GEMINI_API_KEY` set → deterministic mock**, so local dev/testing works
+without a key. Every mock score, note, and chat reply is prefixed
+`[MOCK — no GEMINI_API_KEY set]` so it's never mistaken for a real review.
 
 ## Project structure
 
@@ -102,7 +102,7 @@ src/app/
   api/reviews/[id]/revise/  POST a revised version
   api/reviews/[id]/chat/    GET/POST chat scoped to one review version
 src/lib/
-  gemini.ts                 Stubbed AI pipeline (see above)
+  gemini.ts                 Real Gemini analysis + chat, mock fallback (see above)
   url.ts                    YouTube/TikTok URL validation
   prisma.ts                 Prisma client singleton
   serialize.ts              DB record → UI-shaped review object
@@ -114,7 +114,8 @@ src/types/review.ts         Shared types + score/verdict tier helpers
 
 ## Not yet built (P1/P2 from the PRD)
 
-- Real video retrieval + multimodal analysis
+- TikTok video retrieval (download + Gemini Files API upload) so TikTok clips
+  get real analysis instead of an honest "can't access" failure
 - Review history filtering/search beyond the dashboard list
 - Performance analytics after publishing
 - Direct ClipForge → AfterClip handoff
