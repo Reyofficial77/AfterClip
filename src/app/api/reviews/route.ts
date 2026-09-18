@@ -4,6 +4,13 @@ import { checkClipUrl } from "@/lib/url";
 import { createReviewSchema } from "@/lib/validators";
 import { analyzeClip, CantAccessVideoError, MalformedAIResponseError } from "@/lib/gemini";
 
+// Gemini video analysis routinely takes well over Vercel's default 10s
+// function timeout. Without this, a slow-but-successful analysis gets
+// killed mid-request and shows up to the user as a generic "can't access
+// this video" failure that has nothing to do with the video itself.
+// (Hobby plan caps this at 60s; Pro/Enterprise can go higher.)
+export const maxDuration = 60;
+
 export async function GET() {
   const projects = await prisma.clipProject.findMany({
     orderBy: { createdAt: "desc" },

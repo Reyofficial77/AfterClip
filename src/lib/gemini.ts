@@ -47,7 +47,7 @@ function getClient(): GoogleGenAI | null {
 }
 
 function getModel(): string {
-  return process.env.GEMINI_MODEL || "gemini-3.5-flash";
+  return process.env.GEMINI_MODEL || "gemini-2.5-flash";
 }
 
 // ---------------------------------------------------------------------------
@@ -217,6 +217,12 @@ export async function analyzeClipWithGemini(
     });
     responseText = response.text ?? "";
   } catch (err) {
+    // Log the REAL error server-side (visible in Vercel/Netlify function
+    // logs) — the message shown to the user stays honest-but-generic per
+    // the PRD, but we never want the actual cause (bad API key, wrong
+    // model name, timeout, quota, genuinely inaccessible video, ...) to be
+    // silently swallowed and undebuggable.
+    console.error("[AfterClip] Gemini analyzeContent failed:", err);
     throw new CantAccessVideoError(
       "Gue nggak bisa review clip ini dengan jujur karena videonya nggak bisa gue akses (mungkin private, kepanjangan, atau kehapus)."
     );

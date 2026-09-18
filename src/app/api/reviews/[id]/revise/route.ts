@@ -4,6 +4,9 @@ import { checkClipUrl } from "@/lib/url";
 import { reviseReviewSchema } from "@/lib/validators";
 import { analyzeClip, CantAccessVideoError, MalformedAIResponseError } from "@/lib/gemini";
 
+// See src/app/api/reviews/route.ts for why this is needed.
+export const maxDuration = 60;
+
 export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }

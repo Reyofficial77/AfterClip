@@ -4,6 +4,8 @@ import { chatMessageSchema } from "@/lib/validators";
 import { chatWithGemini } from "@/lib/gemini";
 import { serializeVersion } from "@/lib/serialize";
 
+export const maxDuration = 30;
+
 // Note: `id` here is a ReviewVersion id (chat is scoped to one specific
 // version's review, not the whole project) — this keeps AI answers
 // grounded in that version's actual data, per PRD section 19.
